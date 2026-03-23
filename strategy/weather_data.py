@@ -62,40 +62,49 @@ def fetch_model_forecast(
 ) -> pd.DataFrame:
     """
     Fetch daily max temperature forecasts from a specific weather model.
-
-    Args:
-        lat, lon: Location coordinates
-        start_date, end_date: Date range in 'YYYY-MM-DD' format
-        model: One of 'ecmwf', 'gfs', 'icon'
-
-    Returns:
-        DataFrame with columns: ['date', 'temperature_max']
+    Handles long date ranges by chunking into 90-day intervals.
     """
-    url = HISTORICAL_FORECAST_BASE
-    model_id = MODEL_IDS.get(model, MODEL_IDS["gfs"])
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    
+    all_chunks = []
+    current_start = start_dt
+    
+    while current_start <= end_dt:
+        current_end = min(current_start + timedelta(days=90), end_dt)
+        
+        url = HISTORICAL_FORECAST_BASE
+        model_id = MODEL_IDS.get(model, MODEL_IDS["gfs"])
 
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "start_date": start_date,
-        "end_date": end_date,
-        "daily": "temperature_2m_max",
-        "timezone": "auto",
-        "models": model_id,
-    }
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": current_start.strftime("%Y-%m-%d"),
+            "end_date": current_end.strftime("%Y-%m-%d"),
+            "daily": "temperature_2m_max",
+            "timezone": "auto",
+            "models": model_id,
+        }
 
-    data = _safe_request(url, params)
+        data = _safe_request(url, params)
 
-    if not data or "daily" not in data:
-        print(f"  ⚠ No data returned for model={model}")
+        if data and "daily" in data:
+            daily = data["daily"]
+            chunk_df = pd.DataFrame({
+                "date": pd.to_datetime(daily["time"]),
+                "temperature_max": daily["temperature_2m_max"],
+            })
+            all_chunks.append(chunk_df)
+        
+        current_start = current_end + timedelta(days=1)
+        if current_start <= end_dt:
+            time.sleep(0.5) # Courtesy delay between chunks
+
+    if not all_chunks:
+        print(f"  ⚠ No data returned for model={model} across the entire range")
         return pd.DataFrame(columns=["date", "temperature_max"])
 
-    daily = data["daily"]
-    df = pd.DataFrame({
-        "date": pd.to_datetime(daily["time"]),
-        "temperature_max": daily["temperature_2m_max"],
-    })
-
+    df = pd.concat(all_chunks).drop_duplicates(subset=["date"])
     return df.dropna(subset=["temperature_max"])
 
 
@@ -107,31 +116,45 @@ def fetch_actual_weather(
 ) -> pd.DataFrame:
     """
     Fetch actual observed daily max temperatures (ERA5 reanalysis).
-
-    Returns:
-        DataFrame with columns: ['date', 'actual_max']
+    Handles long date ranges by chunking into 90-day intervals.
     """
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "start_date": start_date,
-        "end_date": end_date,
-        "daily": "temperature_2m_max",
-        "timezone": "auto",
-    }
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    
+    all_chunks = []
+    current_start = start_dt
+    
+    while current_start <= end_dt:
+        current_end = min(current_start + timedelta(days=90), end_dt)
+        
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": current_start.strftime("%Y-%m-%d"),
+            "end_date": current_end.strftime("%Y-%m-%d"),
+            "daily": "temperature_2m_max",
+            "timezone": "auto",
+        }
 
-    data = _safe_request(HISTORICAL_WEATHER_URL, params)
+        data = _safe_request(HISTORICAL_WEATHER_URL, params)
 
-    if not data or "daily" not in data:
-        print(f"  ⚠ No actual weather data returned")
+        if data and "daily" in data:
+            daily = data["daily"]
+            chunk_df = pd.DataFrame({
+                "date": pd.to_datetime(daily["time"]),
+                "actual_max": daily["temperature_2m_max"],
+            })
+            all_chunks.append(chunk_df)
+        
+        current_start = current_end + timedelta(days=1)
+        if current_start <= end_dt:
+            time.sleep(0.5)
+
+    if not all_chunks:
+        print(f"  ⚠ No actual weather data returned across the entire range")
         return pd.DataFrame(columns=["date", "actual_max"])
 
-    daily = data["daily"]
-    df = pd.DataFrame({
-        "date": pd.to_datetime(daily["time"]),
-        "actual_max": daily["temperature_2m_max"],
-    })
-
+    df = pd.concat(all_chunks).drop_duplicates(subset=["date"])
     return df.dropna(subset=["actual_max"])
 
 
