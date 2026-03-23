@@ -56,11 +56,10 @@ def model_consensus(ecmwf: float, gfs: float, icon: float) -> Tuple[float, str]:
     mean_t = statistics.mean(temps)
     std_t = statistics.stdev(temps) if len(temps) > 1 else 0.0
 
-    if abs(mean_t) < 0.01:
-        # Near zero — use absolute threshold instead
-        score = max(0.0, 1.0 - std_t / 5.0)
-    else:
-        score = max(0.0, 1.0 - (std_t / abs(mean_t)))
+    # Ensure we don't penalize small absolute temperatures in winter
+    # By using a minimum denominator of 15.0°C
+    denominator = max(abs(mean_t), 15.0)
+    score = max(0.0, 1.0 - (std_t / denominator))
 
     score = min(score, 1.0)
 

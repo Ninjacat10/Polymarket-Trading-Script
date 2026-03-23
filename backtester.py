@@ -136,13 +136,9 @@ def run_backtest(
         if verbose:
             print(f"  ✓ Got {len(dataset)} days of data")
 
-        # ====================================================
-        # PROCESS EACH DAY
-        # ====================================================
-        trades_today = 0
-
         for _, row in dataset.iterrows():
             date_str = row["date"].strftime("%Y-%m-%d")
+            trades_today = 0
 
             # Skip if missing critical data
             ecmwf = row.get("ecmwf_max")

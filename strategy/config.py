@@ -7,17 +7,17 @@ Strategy configuration and city definitions for the Polymarket weather backteste
 # ============================================================
 STRATEGY_CONFIG = {
     # Model consensus
-    "min_consensus_score": 0.90,       # Below this → skip the event
-    "strong_consensus_score": 0.97,    # Above this → full position
+    "min_consensus_score": 0.85,       # Below this → skip the event
+    "strong_consensus_score": 0.95,    # Above this → full position
 
     # Expected value
-    "min_ev_per_dollar": 0.10,         # Minimum 10% EV on deployed capital
+    "min_ev_per_dollar": 0.05,         # Minimum 5% EV on deployed capital
 
     # Sum check (the 96 rule)
     "max_bin_sum_cents": 96.0,         # Sum of selected bin costs must be < this
 
     # Entry / exit thresholds
-    "entry_threshold_cents": 15.0,     # Only buy bins priced below this
+    "entry_threshold_cents": 40.0,     # Only buy bins priced below this
     "exit_threshold_cents": 45.0,      # Sell when market corrects above this
 
     # Position sizing

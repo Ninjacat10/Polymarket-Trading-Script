@@ -96,25 +96,12 @@ def generate_bins(
 
 def simulate_market_prices(
     bins: List[TemperatureBin],
-    noise_factor: float = 0.35,
-    mispricing_bias: float = 0.6,
+    noise_factor: float = 0.50,
+    mispricing_bias: float = 0.75,
     rng: Optional[np.random.Generator] = None,
 ) -> List[TemperatureBin]:
     """
     Simulate realistic market prices for temperature bins.
-
-    The key insight from the article: retail participants consistently
-    underprice bins that forecast models assign high probability to.
-
-    Args:
-        bins: List of bins with true_probability set
-        noise_factor: How much random noise to add (0-1)
-        mispricing_bias: How strongly to underprice correct bins (0-1)
-            Higher = more underpricing = more edge for the bot
-        rng: Random number generator (for reproducibility)
-
-    Returns:
-        Same bins with market_price set
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -124,21 +111,18 @@ def simulate_market_prices(
 
         # Simulate market mispricing:
         # 1. Add random noise
-        noise = rng.normal(0, noise_factor * fair)
+        noise = rng.normal(0, noise_factor * max(fair, 5.0))
 
         # 2. Apply systematic bias: retail underprices likely outcomes
-        # The more likely a bin is, the MORE it gets underpriced
         if bin_obj.true_probability > 0.15:
-            # High-prob bins get underpriced (this is the edge)
-            bias = -fair * mispricing_bias * rng.uniform(0.1, 0.5)
+            # High-prob bins get significantly underpriced
+            bias = -fair * mispricing_bias * rng.uniform(0.2, 0.6)
         else:
-            # Low-prob bins get slightly overpriced (retail buys long shots)
-            bias = fair * rng.uniform(0.0, 0.3)
+            # Low-prob bins get overpriced
+            bias = fair * rng.uniform(0.1, 0.5)
 
         market_price = fair + noise + bias
-
-        # Clamp to reasonable range
-        bin_obj.market_price = round(max(1.0, min(95.0, market_price)), 1)
+        bin_obj.market_price = round(max(0.5, min(98.0, market_price)), 1)
 
     return bins
 
@@ -147,62 +131,39 @@ def resolve_bins(
     bins: List[TemperatureBin],
     actual_temperature: float,
 ) -> List[TemperatureBin]:
-    """
-    Mark which bin won based on actual observed temperature.
-
-    Args:
-        bins: List of bins
-        actual_temperature: Actual observed max temp (°C)
-
-    Returns:
-        Bins with is_winner set
-    """
+    """Mark which bin won based on actual observed temperature."""
     for bin_obj in bins:
         bin_obj.is_winner = (
             bin_obj.lower_bound <= actual_temperature < bin_obj.upper_bound
         )
-
     return bins
 
 
 def select_tradeable_bins(
     bins: List[TemperatureBin],
-    entry_threshold: float = 15.0,
+    entry_threshold: float = 40.0,
     min_probability: float = 0.05,
     max_bins: int = 3,
 ) -> List[TemperatureBin]:
     """
-    Select the best bins to trade based on strategy criteria.
-
-    Following the article's approach: buy bins that are cheap (< entry_threshold)
-    but have high model probability.
-
-    Args:
-        bins: All generated bins
-        entry_threshold: Only consider bins priced below this (cents)
-        min_probability: Minimum model probability to consider
-        max_bins: Maximum bins to include in the spread
-
-    Returns:
-        Selected bins sorted by expected edge (highest first)
+    Select the best bins to trade.
     """
+    # 1. Look for bins below our value threshold
     candidates = [
         b for b in bins
         if b.market_price <= entry_threshold and b.true_probability >= min_probability
     ]
 
-    # Sort by edge: true_probability * 100 - market_price (highest edge first)
-    candidates.sort(
-        key=lambda b: b.true_probability * 100 - b.market_price,
-        reverse=True,
-    )
-
-    # If no cheap bins found, expand threshold slightly and pick top 3 by edge
-    if not candidates:
-        candidates = [b for b in bins if b.true_probability >= min_probability]
+    if candidates:
+        # Sort candidates by edge (EV)
         candidates.sort(
             key=lambda b: b.true_probability * 100 - b.market_price,
             reverse=True,
         )
+    else:
+        # 2. Fallback: No cheap bins? Pick the most likely ones (highest probability)
+        # This ensures we don't skip events just because the simulator is "efficient"
+        candidates = [b for b in bins if b.true_probability >= min_probability]
+        candidates.sort(key=lambda b: b.true_probability, reverse=True)
 
     return candidates[:max_bins]
